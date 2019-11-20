@@ -1,0 +1,116 @@
+---
+title: "Bank Telemarketing"
+output: html_notebook
+---
+#### Topic: Statistical/Machine learning
+#### Project Target: Prediction on y (client subscribes)
+#### Team Member: Shiqi Song, Qing Shen, Yiping Pan
+
+## 0. Library Import
+```{r}
+# Data Wrangling
+library(tidyverse)
+library(forcats)
+library(stringr)
+library(caTools)
+
+# Data Assessment/Visualizations
+library(DT)
+library(data.table)
+library(pander)
+library(ggplot2)
+library(scales)
+library(grid)
+library(gridExtra)
+library(corrplot)
+library(VIM) 
+library(knitr)
+library(vcd)
+library(caret)
+
+# Model
+library(rminer)
+library(xgboost)
+library(MLmetrics)
+library('randomForest') 
+library('rpart')
+library('rpart.plot')
+library('car')
+library('e1071')
+library(vcd)
+library(ROCR)
+library(pROC)
+library(VIM)
+library(glmnet) 
+```
+
+
+```{r}
+
+```
+
+## 1. Exploratory Data Analysis 
+#### 1.1 Dataframe Reading 
+```{r}
+raw <- read.csv('./bank-additional-full.csv',
+                sep = ';'
+                )
+```
+
+#### 1.2 Check Basic Information
+```{r}
+df <-  data.frame(raw)
+# dimension
+dim(df)
+# check data
+str(df)
+```
+
+
+```{r}
+# completeness of data
+sapply(df, function(x) {sum(is.na(x))})
+```
+#### 1.3 Variables Exploration
+##### 1.3.0 The response variable:y
+```{r}
+ggplot(df[!is.na(df$y),], aes(x = y, fill = y)) +
+  geom_bar(stat='count') +
+  labs(x = 'How many client subscribed a term deposit?') +
+        geom_label(stat='count',aes(label=..count..), size=5) +
+        theme_grey(base_size = 12)
+```
+
+##### 1.3.1 age
+
+
+```{r}
+tbl_age <- df %>%
+  select(age, y) %>%
+  group_by(y) %>%
+  summarise(mean.age = mean(age, na.rm=TRUE))
+
+ggplot(df, aes(age, fill=y)) +
+   geom_histogram(aes(y=..density..), alpha=0.5, bins=30) +
+   geom_density(alpha=.2, aes(colour=y)) +
+   geom_vline(data=tbl_age, aes(xintercept=mean.age, colour=y), lty=2, size=1)  +
+   scale_fill_brewer(palette="Set1") +
+   scale_colour_brewer(palette="Set1") +
+   scale_y_continuous(labels=scales::percent) +
+   ylab("Density") +
+   ggtitle("Subscription Rate by Age") +
+   theme_minimal()
+```
+
+##### 1.3.2 job
+```{r}
+ggplot(df, aes(job, fill=y)) +
+  geom_bar(position="fill",alpha=0.8) +
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(labels=scales::percent) +
+  ylab("Subscribe Rate") +
+  ggtitle("Subscribe Rate by Job") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
