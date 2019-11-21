@@ -71,6 +71,11 @@ str(df)
 # completeness of data
 sapply(df, function(x) {sum(is.na(x))})
 ```
+
+```{r}
+print('There is no missing data')
+```
+
 #### 1.3 Variables Exploration
 ##### 1.3.0 The response variable:y
 ```{r}
