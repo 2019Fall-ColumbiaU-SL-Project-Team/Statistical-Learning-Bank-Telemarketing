@@ -26,7 +26,6 @@ library(corrplot)
 library(VIM) 
 library(knitr)
 library(vcd)
-library(caret)
 
 # Model
 library(rminer)
