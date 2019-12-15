@@ -9,38 +9,27 @@ output: html_notebook
 ## 0. Library Import
 ```{r}
 # Data Wrangling
-library(tidyverse)
-library(forcats)
-library(stringr)
 library(caTools)
 
 # Data Assessment/Visualizations
 library(DT)
-library(data.table)
-library(pander)
 library(ggplot2)
-library(scales)
 library(grid)
 library(gridExtra)
-library(corrplot)
-library(VIM) 
-library(knitr)
-library(vcd)
+library(dplyr)
 
 # Model
+library(e1071) # svm
 library(rminer)
-library(xgboost)
-library(MLmetrics)
-library('randomForest') 
-library('rpart')
-library('rpart.plot')
-library('car')
-library('e1071')
+library(rpart) # DT
+library(rpart.plot)
 library(vcd)
 library(ROCR)
 library(pROC)
-library(VIM)
-library(glmnet) 
+library(tree)
+library(MASS)
+library(nnet)
+#library(ModelMetrics)
 ```
 
 
@@ -53,7 +42,7 @@ library(glmnet)
 ```{r}
 raw <- read.csv('./bank-additional-full.csv',
                 sep = ';'
-                )
+)
 ```
 
 #### 1.2 Check Basic Information
@@ -64,6 +53,7 @@ dim(df)
 # check data
 str(df)
 ```
+
 
 
 ```{r}
@@ -81,8 +71,8 @@ print('There is no missing data')
 ggplot(df[!is.na(df$y),], aes(x = y, fill = y)) +
   geom_bar(stat='count') +
   labs(x = 'How many client subscribed a term deposit?') +
-        geom_label(stat='count',aes(label=..count..), size=5) +
-        theme_grey(base_size = 12)
+  geom_label(stat='count',aes(label=..count..), size=5) +
+  theme_grey(base_size = 12)
 ```
 
 ##### 1.3.1 age
@@ -90,20 +80,20 @@ ggplot(df[!is.na(df$y),], aes(x = y, fill = y)) +
 
 ```{r}
 tbl_age <- df %>%
-  select(age, y) %>%
+  dplyr::select(age, y) %>%
   group_by(y) %>%
   summarise(mean.age = mean(age, na.rm=TRUE))
 
 ggplot(df, aes(age, fill=y)) +
-   geom_histogram(aes(y=..density..), alpha=0.5, bins=30) +
-   geom_density(alpha=.2, aes(colour=y)) +
-   geom_vline(data=tbl_age, aes(xintercept=mean.age, colour=y), lty=2, size=1)  +
-   scale_fill_brewer(palette="Set1") +
-   scale_colour_brewer(palette="Set1") +
-   scale_y_continuous(labels=scales::percent) +
-   ylab("Density") +
-   ggtitle("Subscription Rate by Age") +
-   theme_minimal()
+  geom_histogram(aes(y=..density..), alpha=0.5, bins=30) +
+  geom_density(alpha=.2, aes(colour=y)) +
+  geom_vline(data=tbl_age, aes(xintercept=mean.age, colour=y), lty=2, size=1)  +
+  scale_fill_brewer(palette="Set1") +
+  scale_colour_brewer(palette="Set1") +
+  scale_y_continuous(labels=scales::percent) +
+  ylab("Density") +
+  ggtitle("Subscription Rate by Age") +
+  theme_minimal()
 ```
 
 ##### 1.3.2 job
@@ -117,4 +107,467 @@ ggplot(df, aes(job, fill=y)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
 ```
+## 2. Train test split
+```{r}
+df <- df %>%
+  mutate(y = ifelse(y=="no", 0, 1))
 
+set.seed(99)
+smp_size = floor(0.97*nrow(df))
+train_idx = sample(seq_len(nrow(df)),size = smp_size)
+
+# df_train <- df[train_idx, ]
+# df_test <- df[-train_idx, ]
+
+df_train <- df[1:40188, ]
+df_test <- df[40189:41188, ]
+```
+
+
+
+
+## 3. Data preprocessing (PCA/Transformation/Resample(oversample or downsample)/FeatureSelection)
+##### 3.1. PCA
+```{r}
+
+```
+##### 3.2. Transformation
+```{r}
+
+```
+##### 3.3. Resample
+```{r}
+
+```
+##### 3.4. Feature Selection
+```{r}
+
+```
+
+
+## 4. Modeling and Prediction
+
+##### 4.-1. roc-auc method 0 (manually)
+```{r}
+
+# ##================== DEF1: ROC CALCULATION FUNCTION ================= 
+# 
+# calculate_roc <- function(probs, y, n=100) {
+#   
+#   tp <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 1)
+#   }
+#   
+#   fp <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 0)
+#   }
+#   
+#   tn <- function(probs, y, threshold) {
+#     sum(probs < threshold & y == 0)
+#   }
+#   
+#   fn <- function(probs, y, threshold) {
+#     sum(probs < threshold & y == 1)
+#   }
+#   
+#   tpr <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 1) / sum(y == 1)
+#   }
+#   
+#   fpr <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 0) / sum(y == 0)
+#   }
+#   
+#   threshold_round <- function(value, threshold)
+#   {
+#     return (as.integer(!(value < threshold)))
+#   }
+# 
+#   auc_ <- function(probs, y) {
+#     auc(y, probs)
+#   }
+#   
+#   roc <- data.frame(threshold = seq(0,1,length.out=n), tpr=NA, fpr=NA)
+#   roc$tp <- sapply(roc$threshold, function(th) tp(probs, y, th))
+#   roc$fp <- sapply(roc$threshold, function(th) fp(probs, y, th))
+#   roc$tn <- sapply(roc$threshold, function(th) tn(probs, y, th))
+#   roc$fn <- sapply(roc$threshold, function(th) fn(probs, y, th))
+#   roc$tpr <- sapply(roc$threshold, function(th) tpr(probs, y, th))
+#   roc$fpr <- sapply(roc$threshold, function(th) fpr(probs, y, th))
+#   roc$auc <-  sapply(roc$threshold, function(th) auc_(probs, y))
+#   
+#   return(roc)
+# }
+# 
+# ##================== DEF2: PLOT FUNCTION ================= 
+# 
+# plot_roc <- function(roc, threshold) {
+#   
+#   norm_vec <- function(v) (v - min(v))/diff(range(v))
+#   
+#   idx_threshold = which.min(abs(roc$threshold-threshold))
+#   
+#   p_roc <- ggplot(roc, aes(fpr,tpr)) + 
+#     geom_line(color=rgb(0,0,1,alpha=0.3)) +
+#     geom_point(size=2, alpha=0.5) +
+#     labs(title = sprintf("ROC")) + xlab("FPR") + ylab("TPR") +
+#     geom_hline(yintercept=roc[idx_threshold,"tpr"], alpha=0.5, linetype="dashed") +
+#     geom_vline(xintercept=roc[idx_threshold,"fpr"], alpha=0.5, linetype="dashed")
+# 
+#   grid.arrange(p_roc, ncol=1)#,sub=textGrob(sub_title, gp=gpar(cex=1), just="bottom"))
+# }
+# 
+# 
+# ##================== CALL =============================
+# 
+# LR.model <- glm(y ~ ., data = df_train, family = binomial(link = 'logit'), control = list(maxit = 25))
+# 
+# LR.roc <- calculate_roc(probs = LR.probs
+#                         , y = df_test$y
+#                         , n = 100
+#                         )
+# th <- 0.5
+# plot_roc(roc = LR.roc
+#          , threshold = th
+#          )
+# LR.auc = LR.roc$auc[1]
+# print(LR.auc)
+```
+
+##### 4.0. Helper: Confusion Matrix
+```{r}
+plot_confusion_matrix <- function(probs, y, Subtitle) {
+  tst <- data.frame(round(probs,0), y)
+  opts <-  c("Target","Predicted")
+  names(tst) <- opts
+  cf <- plyr::count(tst)
+  cf[opts][cf[opts]==0] <- "failure"
+  cf[opts][cf[opts]==1] <- "success"
+  
+  ggplot(data =  cf, mapping = aes(x = Predicted, y = Target)) +
+    labs(title = "Confusion matrix", subtitle = Subtitle) +
+    geom_tile(aes(fill = freq), colour = "grey") +
+    geom_text(aes(label = sprintf("%1.0f", freq)), vjust = 1) +
+    scale_fill_gradient(low = "lightblue", high = "blue") +
+    theme_bw() + theme(legend.position = "none")
+  
+}
+```
+
+##### 4.1. Logistic Regression - LR
+###### 4.1.1 fitting - LR
+```{r}
+LR.model <- glm(formula = y ~ .
+                , data = df_train
+                , family = binomial(link = 'logit')
+                , control = list(maxit = 25)
+)
+
+summary(LR.model)
+```
+###### 4.1.2 confusion matrix - LR
+```{r}
+LR.probs <- predict(LR.model
+                    , df_test[, -ncol(df_test)]
+                    , type = "response"
+)
+
+plot_confusion_matrix(probs = LR.probs
+                      , y = df_test$y
+                      , Subtitle = "Logistic Regression"
+)
+
+```
+
+###### 4.1.3 roc-auc method 1 - LR 
+```{r}
+# pROC
+# ggroc
+LR.roc = roc(df_test$y ~ LR.probs)
+plot(LR.roc)
+print(LR.roc$auc)
+```
+
+###### 4.1.4 roc-auc method 2 - LR
+```{r }
+
+pred <- prediction(LR.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+```
+
+###### 4.1.5 lift cumulative - LR
+```{r}
+pred <- prediction(LR.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+
+##### 4.2. Decision Tree - DT
+###### 4.2.1 fitting - DT
+```{r}
+DT.model = rpart(formula = y ~ . 
+                 , data = df_train
+                 , method = "class"
+                 #, minsplit
+                 #, minbucket
+)
+
+DT.model
+```
+
+###### 4.2.2 visualization - DT
+```{r}
+# plot(DT.model)
+# text
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+# plot mytree
+fancyRpartPlot(DT.model, caption = NULL)
+```
+```{r}
+DT.importance = DT.model$variable.importance
+DT.importance
+```
+
+###### 4.2.3 confusion matrix - DT
+```{r}
+DT.probs <- predict(DT.model
+                    , df_test[, -ncol(df_test)]
+                    , type = "prob"
+)
+DT.probs <- DT.probs[, 2] 
+# Notice: The prediced results has two complementary columns. The 2nd column is what we want.
+
+# DT.pred <- as.numeric(DT.pred)
+# DT.pred[DT.pred==1] = 0
+# DT.pred[DT.pred==2] = 1
+# DT.probs = DT.pred
+# 
+plot_confusion_matrix(probs = DT.probs
+                      , y = df_test$y
+                      , Subtitle = "Decision Tree"
+)
+
+```
+
+###### 4.2.4 roc-auc method 1 - DT
+```{r}
+DT.roc = roc(df_test$y ~ DT.probs)
+plot(DT.roc)
+print(DT.roc$auc)
+```
+
+###### 4.2.5 roc-auc method 2 - DT
+```{r}
+pred <- prediction(DT.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 4.2.6 lift cumulative - DT
+```{r}
+pred <- prediction(DT.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+##### 4.3 Support Vector Machine - SV
+###### 4.3.1 fitting - SV
+```{r}
+#### running needs about 5 mins.
+SV.model <- svm(formula = y ~ .
+                , data = df_train
+                , type = 'C-classification'
+                , kernel = 'linear'
+                , probability = TRUE
+)
+```
+
+```{r}
+summary(SV.model)
+```
+
+
+
+###### 4.3.2 confusion matrix - SV
+```{r}
+pred <- predict(SV.model
+                    , df_test[, -ncol(df_test)]
+                    , decision.values = TRUE
+                    , probability = TRUE
+)
+SV.probs = attr(pred, "probabilities")[,2]
+```
+
+
+```{r}
+plot_confusion_matrix(probs = SV.probs
+                      , y = df_test$y
+                      , Subtitle = "Support Vector Machine"
+)
+
+```
+
+###### 4.3.3 roc-auc method 1 - SV
+```{r}
+SV.roc = roc(df_test$y ~ SV.probs)
+plot(SV.roc)
+print(SV.roc$auc)
+```
+
+###### 4.3.4 roc-auc method 2 - SV
+```{r}
+pred <- prediction(SV.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 4.3.5 lift cumulative - SV
+```{r}
+pred <- prediction(SV.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+##### 4.4. Neural Network - NN
+###### 4.4.1 fitting - NN
+```{r}
+#### running needs about 5 mins.
+NN.model <- fit(x = y ~ .
+                   , data = df_train
+                   , model = 'mlp'
+                   , task = 'prob'#'class','reg','default'
+                   #, search = 
+                   #, scale = 
+                   #, transform = 
+                   )
+
+```
+
+```{r}
+#(NN.model)@formula
+```
+
+
+
+###### 4.4.2 confusion matrix - NN
+```{r}
+NN.probs <- predict(object = NN.model
+                , df_test[, -ncol(df_test)]
+                , type = 'prob'
+)
+#NN.probs = attr(pred, "probabilities")[,2]
+```
+
+
+```{r}
+plot_confusion_matrix(probs = NN.probs
+                      , y = df_test$y
+                      , Subtitle = "Support Vector Machine"
+)
+
+```
+
+###### 4.4.3 roc-auc method 1 - NN
+```{r}
+NN.roc = roc(df_test$y ~ NN.probs)
+plot(NN.roc)
+print(NN.roc$auc)
+```
+
+###### 4.4.4 roc-auc method 2 - NN
+```{r}
+pred <- prediction(NN.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 4.4.5 lift cumulative - NN
+```{r}
+pred <- prediction(NN.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
