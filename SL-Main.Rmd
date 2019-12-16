@@ -7,7 +7,7 @@ output: html_notebook
 #### Team Member: Yiping Pan, Shiqi Song, Qing Shen 
 
 ## 0. Library Import
-```{r}
+```{r warning=FALSE}
 # Data Wrangling
 library(caTools)
 
@@ -439,10 +439,11 @@ plot(perf, main="Lift Cumulative Curve"
 ```{r}
 #### running needs about 5 mins.
 SV.model <- svm(formula = y ~ .
-, data = df_train
-, type = 'C-classification'
-, kernel = 'linear'
-, probability = TRUE
+                , data = df_train
+                , type = 'C-classification'
+                , kernel = 'radial'
+                , scale = TRUE
+                , probability = TRUE
 )
 ```
 
@@ -455,9 +456,9 @@ summary(SV.model)
 ###### 4.3.2 confusion matrix - SV
 ```{r}
 pred <- predict(SV.model
-, df_test[, -ncol(df_test)]
-, decision.values = TRUE
-, probability = TRUE
+                , df_test[, -ncol(df_test)]
+                , decision.values = TRUE
+                , probability = TRUE
 )
 SV.probs = attr(pred, "probabilities")[,2]
 ```
@@ -465,8 +466,8 @@ SV.probs = attr(pred, "probabilities")[,2]
 
 ```{r}
 plot_confusion_matrix(probs = SV.probs
-, y = df_test$y
-, Subtitle = "Support Vector Machine"
+                      , y = df_test$y
+                      , Subtitle = "Support Vector Machine"
 )
 
 ```
@@ -484,9 +485,9 @@ pred <- prediction(SV.probs, df_test$y)
 perf <- performance(pred,"tpr","fpr")
 
 plot(perf
-, main="ROC Curve"
-, colorize=T
-, lwd = 4
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
 )
 
 auc <- performance(pred, measure = "auc")
@@ -507,8 +508,8 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      )
 perf <- performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
-, colorize=T
-, lwd = 4
+     , colorize=T
+     , lwd = 4
 )
 ```
 
@@ -851,10 +852,10 @@ KNN.model <- mining(x = y ~ .
                     , model = 'knn'
                     , task = 'prob'  #'class','reg','default'
                     , method = c('holdoutorder', 1000)
-                    # , search=list(search=mparheuristic("knn", n= 1)
-                    #               , method = c('kfoldrandom',1) 
-                    #               , metric="AUC" 
-                    #)
+                    , search=list(search=mparheuristic("knn", n= 10)
+                                  , method = c('kfoldrandom',5)
+                                  , metric="AUC"
+                    )
                     #, feature = 'none'
                     #, search = 
                     #, scale = 
@@ -881,6 +882,7 @@ KNN.auc
 ```{r}
 AUC <-  data.frame(cbind(LR.roc$auc
                          , DT.roc$auc
+                         , SV.roc$auc
                          , NN.auc
                          , RF.auc
                          , BAGG.auc
@@ -891,6 +893,7 @@ AUC <-  data.frame(cbind(LR.roc$auc
 )
 colnames(AUC) <- c('LR'
                    ,'DT'
+                   ,'SV'
                    ,'NN'
                    ,'RF'
                    ,'BAGG'
@@ -901,6 +904,7 @@ colnames(AUC) <- c('LR'
 
 PROBS <- data.frame(cbind(LR.probs
                           , DT.probs
+                          , SV.probs
                           , NN.probs
                           , RF.probs
                           , BAGG.probs
@@ -911,6 +915,7 @@ PROBS <- data.frame(cbind(LR.probs
 )
 colnames(PROBS) <- c('LR'
                      ,'DT'
+                     ,'SV'
                      ,'NN'
                      ,'RF'
                      ,'BAGG'
@@ -935,7 +940,7 @@ CORRELATION
 # dim(PROBS) is 1000 x n(models)
 
 
-model_selected  <-  c('LR','NN','BOOST','KNN')
+model_selected  <-  c('LR','SV','NN','BOOST','KNN')
 PROBS_selected <-  PROBS[, model_selected]
 AUC_selected <-  AUC[, model_selected]
 ```
@@ -959,8 +964,8 @@ META.probs <- rowSums(tmp)
 ###### 6.2.1 Confusion Matrix - META
 ```{r}
 plot_confusion_matrix(probs = META.probs
-, y = df_test$y
-, Subtitle = "META"
+                      , y = df_test$y
+                      , Subtitle = "META"
 )
 
 ```
@@ -975,15 +980,15 @@ plot(META.roc)
 print(META.roc$auc)
 ```
 
-###### 4.3.4 roc-auc method 2 - META
+###### 6.2.3 roc-auc method 2 - META
 ```{r}
 pred <- prediction(META.probs, df_test$y)
 perf <- performance(pred,"tpr","fpr")
 
 plot(perf
-, main="ROC Curve"
-, colorize=T
-, lwd = 4
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
 )
 
 auc <- performance(pred, measure = "auc")
@@ -991,7 +996,7 @@ print(auc@y.values[[1]])
 
 ```
 
-###### 4.3.5 lift cumulative - META
+###### 6.2.4 lift cumulative - META
 ```{r}
 pred <- prediction(META.probs, df_test$y) # this line is a copy fro the previous block
 perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
@@ -1004,8 +1009,8 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      )
 perf <- performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
-, colorize=T
-, lwd = 4
+     , colorize=T
+     , lwd = 4
 )
 ```
 
