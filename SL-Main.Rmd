@@ -287,7 +287,7 @@ plot_confusion_matrix <- function(probs, y, Subtitle) {
 ###### 4.1.1 fitting - LR
 ```{r}
 LR.model <- glm(formula = y ~ .
-                , data = raw_train_PCA#df_train
+                , data = df_train
                 , family = binomial(link = 'logit')
                 , control = list(maxit = 25)
 )
