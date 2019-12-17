@@ -7,7 +7,7 @@ output: html_notebook
 #### Team Member: Yiping Pan, Shiqi Song, Qing Shen 
 
 ## 0. Library Import
-```{r}
+```{r warning=FALSE}
 # Data Wrangling
 library(caTools)
 
@@ -131,6 +131,17 @@ raw_test <- raw[40189:41188, ]
 # The dims of datasets remain the same.
 # results: raw_PCA, raw_train_PCA, raw_test_PCA
 
+library(dummies)
+xz
+d <- dummy.data.frame(raw[, -21])
+raw_PCA <- princomp(d)
+#summary(raw_train_PCA, loadings = T)
+n_PCA <- 5
+raw_PCA <- predict(raw_PCA)[,1:n_PCA]
+raw_PCA <- data.frame(cbind(raw_PCA, raw$y))
+colnames(raw_PCA)[n_PCA+1] <- 'y'
+raw_train_PCA <- raw_PCA[1:40188,]
+raw_test_PCA <- raw_PCA[40189:41188,]
 ```
 
 ##### 3.2. Resample
@@ -149,13 +160,13 @@ raw_test <- raw[40189:41188, ]
 
 ```{r}
 
-df = raw
-df_train = raw_train
-df_test = raw_test
+# df = raw
+# df_train = raw_train
+# df_test = raw_test
 
-# df = raw_PCA
-# df_train = raw_train_PCA
-# df_test = raw_test_PCA
+df = raw_PCA
+df_train = raw_train_PCA
+df_test = raw_test_PCA
 
 # df = raw_RS
 # df_train = raw_train_RS
@@ -276,7 +287,7 @@ plot_confusion_matrix <- function(probs, y, Subtitle) {
 ###### 4.1.1 fitting - LR
 ```{r}
 LR.model <- glm(formula = y ~ .
-                , data = df_train
+                , data = raw_train_PCA#df_train
                 , family = binomial(link = 'logit')
                 , control = list(maxit = 25)
 )
@@ -439,10 +450,11 @@ plot(perf, main="Lift Cumulative Curve"
 ```{r}
 #### running needs about 5 mins.
 SV.model <- svm(formula = y ~ .
-, data = df_train
-, type = 'C-classification'
-, kernel = 'linear'
-, probability = TRUE
+                , data = df_train
+                , type = 'C-classification'
+                , kernel = 'radial'
+                , scale = TRUE
+                , probability = TRUE
 )
 ```
 
@@ -455,9 +467,9 @@ summary(SV.model)
 ###### 4.3.2 confusion matrix - SV
 ```{r}
 pred <- predict(SV.model
-, df_test[, -ncol(df_test)]
-, decision.values = TRUE
-, probability = TRUE
+                , df_test[, -ncol(df_test)]
+                , decision.values = TRUE
+                , probability = TRUE
 )
 SV.probs = attr(pred, "probabilities")[,2]
 ```
@@ -465,8 +477,8 @@ SV.probs = attr(pred, "probabilities")[,2]
 
 ```{r}
 plot_confusion_matrix(probs = SV.probs
-, y = df_test$y
-, Subtitle = "Support Vector Machine"
+                      , y = df_test$y
+                      , Subtitle = "Support Vector Machine"
 )
 
 ```
@@ -484,9 +496,9 @@ pred <- prediction(SV.probs, df_test$y)
 perf <- performance(pred,"tpr","fpr")
 
 plot(perf
-, main="ROC Curve"
-, colorize=T
-, lwd = 4
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
 )
 
 auc <- performance(pred, measure = "auc")
@@ -507,8 +519,8 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      )
 perf <- performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
-, colorize=T
-, lwd = 4
+     , colorize=T
+     , lwd = 4
 )
 ```
 
@@ -522,9 +534,10 @@ NN.model <- fit(x = y ~ .
                 , data = df_train
                 , model = 'mlp'
                 , task = 'prob'#'class','reg','default'
-                #, search = 
-                #, scale = 
-                #, transform = 
+                #, search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
+                #, search =
+                #, scale =
+                #, transform =
 )
 
 ```
@@ -606,7 +619,7 @@ NN.model2 <- mining(x = y ~ .
                     , model = 'mlp'
                     , task = 'prob'  #'class','reg','default'
                     , method = c('holdoutorder', 1000)
-                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',5) , metric="AUC" )
+                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
                     #, feature = 'none'
                     #, search = 
                     #, scale = 
@@ -632,7 +645,7 @@ NN.conf
 cat('\n','AUC:\n')
 NN.auc
 cat('\n','LIFT ACCUMULATIVE:\n')
-NN.lift
+NN.alift
 
 ## try:
 # NN.probs2 = NN.model2$pred[[1]][,2]
@@ -684,9 +697,9 @@ RF.model <- mining(x = y ~ .
                    , model = 'randomForest'
                    , task = 'prob'  #'class','reg','default'
                    , method = c('holdoutorder', 1000)
-                   , search=list(search = mparheuristic("randomForest", n=1)# 10x5 needs 3100s to run.
+                   , search=list(search = mparheuristic("randomForest", n=5)# 10x5 needs 3100s to run.
                                  #, method = c('holdoutrol',100) 
-                                 , method = c('kfoldorder',1)
+                                 , method = c('kfoldorder',2)
                                  , metric = "AUC" 
                    )
                    
@@ -721,7 +734,7 @@ BAGG.model <- mining(x = y ~ .
                      , model = 'bagging'
                      , task = 'prob'  #'class','reg','default'
                      , method = c('holdoutorder', 1000)
-                     , search=list(search=mparheuristic("bagging", n= 2)
+                     , search=list(search=mparheuristic("bagging", n= 3)
                                    , method = c('kfoldrandom',2) 
                                    , metric="AUC" 
                      )
@@ -751,7 +764,7 @@ BAGG.auc
 ##### 4.7 Boosting - BOOST
 
 ```{r}
-BOOST.model2 <- mining(x = y ~ .
+BOOST.model <- mining(x = y ~ .
                        , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
                        , model = 'boosting'
                        , task = 'prob'  #'class','reg','default'
@@ -851,10 +864,10 @@ KNN.model <- mining(x = y ~ .
                     , model = 'knn'
                     , task = 'prob'  #'class','reg','default'
                     , method = c('holdoutorder', 1000)
-                    # , search=list(search=mparheuristic("knn", n= 1)
-                    #               , method = c('kfoldrandom',1) 
-                    #               , metric="AUC" 
-                    #)
+                    , search=list(search=mparheuristic("knn", n= 10)
+                                  , method = c('kfoldrandom',5)
+                                  , metric="AUC"
+                    )
                     #, feature = 'none'
                     #, search = 
                     #, scale = 
@@ -881,6 +894,7 @@ KNN.auc
 ```{r}
 AUC <-  data.frame(cbind(LR.roc$auc
                          , DT.roc$auc
+                         , SV.roc$auc
                          , NN.auc
                          , RF.auc
                          , BAGG.auc
@@ -891,6 +905,7 @@ AUC <-  data.frame(cbind(LR.roc$auc
 )
 colnames(AUC) <- c('LR'
                    ,'DT'
+                   ,'SV'
                    ,'NN'
                    ,'RF'
                    ,'BAGG'
@@ -901,6 +916,7 @@ colnames(AUC) <- c('LR'
 
 PROBS <- data.frame(cbind(LR.probs
                           , DT.probs
+                          , SV.probs
                           , NN.probs
                           , RF.probs
                           , BAGG.probs
@@ -911,6 +927,7 @@ PROBS <- data.frame(cbind(LR.probs
 )
 colnames(PROBS) <- c('LR'
                      ,'DT'
+                     ,'SV'
                      ,'NN'
                      ,'RF'
                      ,'BAGG'
@@ -935,7 +952,7 @@ CORRELATION
 # dim(PROBS) is 1000 x n(models)
 
 
-model_selected  <-  c('LR','NN','BOOST','KNN')
+model_selected  <-  c('LR','SV','NN','BOOST','KNN')
 PROBS_selected <-  PROBS[, model_selected]
 AUC_selected <-  AUC[, model_selected]
 ```
@@ -943,7 +960,7 @@ AUC_selected <-  AUC[, model_selected]
 ###### 6.1.2 Weights
 ```{r}
 
-Weight <-  (AUC_selected-0.5776)/(1-0.5776)
+Weight <-  (AUC_selected-0.5)/(1-0.5)
 Weight <-  Weight/sum(Weight)
 print(Weight)
 ```
@@ -959,8 +976,8 @@ META.probs <- rowSums(tmp)
 ###### 6.2.1 Confusion Matrix - META
 ```{r}
 plot_confusion_matrix(probs = META.probs
-, y = df_test$y
-, Subtitle = "META"
+                      , y = df_test$y
+                      , Subtitle = "META"
 )
 
 ```
@@ -975,15 +992,15 @@ plot(META.roc)
 print(META.roc$auc)
 ```
 
-###### 4.3.4 roc-auc method 2 - META
+###### 6.2.3 roc-auc method 2 - META
 ```{r}
 pred <- prediction(META.probs, df_test$y)
 perf <- performance(pred,"tpr","fpr")
 
 plot(perf
-, main="ROC Curve"
-, colorize=T
-, lwd = 4
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
 )
 
 auc <- performance(pred, measure = "auc")
@@ -991,7 +1008,7 @@ print(auc@y.values[[1]])
 
 ```
 
-###### 4.3.5 lift cumulative - META
+###### 6.2.4 lift cumulative - META
 ```{r}
 pred <- prediction(META.probs, df_test$y) # this line is a copy fro the previous block
 perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
@@ -1004,8 +1021,8 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      )
 perf <- performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
-, colorize=T
-, lwd = 4
+     , colorize=T
+     , lwd = 4
 )
 ```
 
@@ -1013,12 +1030,22 @@ plot(perf, main="Lift Cumulative Curve"
 ## 7. Models Comparison
 ```{r}
 AUC_all <- cbind(AUC, META.roc$auc)
-colnames(AUC_all)[8] <- 'META'
+colnames(AUC_all)[9] <- 'META'
 
 PROBS_all <- cbind(PROBS, META.probs)
-colnames(PROBS_all)[8] <- 'META'
+colnames(PROBS_all)[9] <- 'META'
 
 CORRELATION_all <- cor(PROBS_all)
 CORRELATION_all
 ```
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
 
