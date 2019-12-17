@@ -132,7 +132,7 @@ raw_test <- raw[40189:41188, ]
 # results: raw_PCA, raw_train_PCA, raw_test_PCA
 
 library(dummies)
-xz
+
 d <- dummy.data.frame(raw[, -21])
 raw_PCA <- princomp(d)
 #summary(raw_train_PCA, loadings = T)
@@ -142,7 +142,6 @@ raw_PCA <- data.frame(cbind(raw_PCA, raw$y))
 colnames(raw_PCA)[n_PCA+1] <- 'y'
 raw_train_PCA <- raw_PCA[1:40188,]
 raw_test_PCA <- raw_PCA[40189:41188,]
-
 ```
 
 ##### 3.2. Resample
@@ -168,7 +167,6 @@ raw_test_PCA <- raw_PCA[40189:41188,]
 df = raw_PCA
 df_train = raw_train_PCA
 df_test = raw_test_PCA
-
 
 # df = raw_RS
 # df_train = raw_train_RS
@@ -289,7 +287,7 @@ plot_confusion_matrix <- function(probs, y, Subtitle) {
 ###### 4.1.1 fitting - LR
 ```{r}
 LR.model <- glm(formula = y ~ .
-                , data = df_train
+                , data = raw_train_PCA#df_train
                 , family = binomial(link = 'logit')
                 , control = list(maxit = 25)
 )
@@ -347,6 +345,7 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      , lwd = 4
 #      )
 perf <- performance(pred,"tpr","rpp")
+alr=performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
      , colorize=T
      , lwd = 4
@@ -439,6 +438,7 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      , lwd = 4
 #      )
 perf <- performance(pred,"tpr","rpp")
+adt=performance(pred,"tpr","rpp")
 plot(perf, main="Lift Cumulative Curve"
      , colorize=T
      , lwd = 4
@@ -520,6 +520,7 @@ perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous blo
 #      , lwd = 4
 #      )
 perf <- performance(pred,"tpr","rpp")
+asv <- perf
 plot(perf, main="Lift Cumulative Curve"
      , colorize=T
      , lwd = 4
@@ -536,6 +537,10 @@ NN.model <- fit(x = y ~ .
                 , data = df_train
                 , model = 'mlp'
                 , task = 'prob'#'class','reg','default'
+                #, search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
+                #, search =
+                #, scale =
+                #, transform =
 )
 
 ```
@@ -617,7 +622,7 @@ NN.model2 <- mining(x = y ~ .
                     , model = 'mlp'
                     , task = 'prob'  #'class','reg','default'
                     , method = c('holdoutorder', 1000)
-                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',5) , metric="AUC" )
+                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
                     #, feature = 'none'
                     #, search = 
                     #, scale = 
@@ -644,7 +649,6 @@ cat('\n','AUC:\n')
 NN.auc
 cat('\n','LIFT ACCUMULATIVE:\n')
 NN.alift
-
 
 ## try:
 # NN.probs2 = NN.model2$pred[[1]][,2]
@@ -699,7 +703,6 @@ RF.model <- mining(x = y ~ .
                    , search=list(search = mparheuristic("randomForest", n=5)# 10x5 needs 3100s to run.
                                  #, method = c('holdoutrol',100) 
                                  , method = c('kfoldorder',2)
-
                                  , metric = "AUC" 
                    )
                    
@@ -734,7 +737,7 @@ BAGG.model <- mining(x = y ~ .
                      , model = 'bagging'
                      , task = 'prob'  #'class','reg','default'
                      , method = c('holdoutorder', 1000)
-                     , search=list(search=mparheuristic("bagging", n= 2)
+                     , search=list(search=mparheuristic("bagging", n= 3)
                                    , method = c('kfoldrandom',2) 
                                    , metric="AUC" 
                      )
@@ -764,20 +767,19 @@ BAGG.auc
 ##### 4.7 Boosting - BOOST
 
 ```{r}
-
-BOOST.model2 <- mining(x = y ~ .
-                       , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
-                       , model = 'boosting'
-                       , task = 'prob'  #'class','reg','default'
-                       , method = c('holdoutorder', 1000)
-                       # , search=list(search=mparheuristic("boosting", n= 2) ## 2x2 needs 7500s !
-                       #               , method = c('kfoldrandom',2) 
-                       #               , metric="AUC" 
-                       #)
-                       #, feature = 'none'
-                       #, search = 
-                       #, scale = 
-                       #, transform = 
+BOOST.model <- mining(x = y ~ .
+                      , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
+                      , model = 'boosting'
+                      , task = 'prob'  #'class','reg','default'
+                      , method = c('holdoutorder', 1000)
+                      # , search=list(search=mparheuristic("boosting", n= 2) ## 2x2 needs 7500s !
+                      #               , method = c('kfoldrandom',2) 
+                      #               , metric="AUC" 
+                      #)
+                      #, feature = 'none'
+                      #, search = 
+                      #, scale = 
+                      #, transform = 
 )
 ```
 
@@ -961,8 +963,7 @@ AUC_selected <-  AUC[, model_selected]
 ###### 6.1.2 Weights
 ```{r}
 
-Weight <-  (AUC_selected-0.5776)/(1-0.5776)
-
+Weight <-  (AUC_selected-0.5)/(1-0.5)
 Weight <-  Weight/sum(Weight)
 print(Weight)
 ```
@@ -1028,18 +1029,119 @@ plot(perf, main="Lift Cumulative Curve"
 )
 ```
 
+##### 6.3 clustering
+###### 6.3.1 roc-CLU
+```{r}
+cl <- kmeans(PROBS_selected, 2)
+chaa=cl[["cluster"]]-rep(1,1000)
+cl_power <- 1/exp(abs(chaa-PROBS_selected ))
+#cl_power <- exp(1/abs((cl$cluster-1)-PROBS_selected ))
+#cl_power <-exp(-abs((cl$cluster-1)-PROBS_selected ))
+Weight <-  cl_power/(rowSums(cl_power[, 1:5]))
+tmp <- mapply(`*`, PROBS_selected, Weight)
+CLU.probs <- rowSums(tmp)
+CLU.roc = roc(df_test$y ~ CLU.probs)
+print(CLU.roc$auc) 
+```
+###### 6.3.2 lift cumulative - CLU
+```{r}
+pred <- prediction(CLU.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the 
+aclu<- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
 
 ## 7. Models Comparison
 ```{r}
 AUC_all <- cbind(AUC, META.roc$auc)
-
 colnames(AUC_all)[9] <- 'META'
 
 PROBS_all <- cbind(PROBS, META.probs)
 colnames(PROBS_all)[9] <- 'META'
 
-
 CORRELATION_all <- cor(PROBS_all)
 CORRELATION_all
 ```
+
+## 8. Plot
+###### 8.1 roc curve without tree-based method
+```{r}
+m1=(rep(1,1001)-LR.roc[["specificities"]])
+m2=(rep(1,7)-DT.roc[["specificities"]])
+m3=(rep(1,1001)-SV.roc[["specificities"]])
+m4=(rep(1,1001)-CLU.roc[["specificities"]])
+plot(m1,LR.roc[["sensitivities"]],col="white",main="ROC curve",xlab= 'FPR', ylab = 'TPR',lwd=2)
+lines(m1,LR.roc[["sensitivities"]],col='black',lwd=2)
+lines(m2,DT.roc[["sensitivities"]],col="red",lwd=2)
+lines(m3,SV.roc[["sensitivities"]],col="green",lwd=2)
+lines(NN.metric[[1]][["roc"]][["roc"]][,2]~NN.metric[[1]][["roc"]][["roc"]][,1],col="blue",lwd=2)
+lines(m4,CLU.roc[["sensitivities"]],col="pink",lwd=2)
+legend("bottomright",legend=c(" LR"," DT","SV","NN",'CLU'),col=c('black',"red","green","blue",'pink'),lwd=1)
+
+
+
+```
+
+###### 8.2 all roc curves
+```{r}
+m1=(rep(1,1001)-LR.roc[["specificities"]])
+m2=(rep(1,7)-DT.roc[["specificities"]])
+m3=(rep(1,1001)-SV.roc[["specificities"]])
+m4=(rep(1,1001)-META.roc[["specificities"]])
+m5=(rep(1,1001)-CLU.roc[["specificities"]])
+par(cex.axis=0.5,font.axis=2)
+plot(m1,LR.roc[["sensitivities"]],col="white",main="ROC curve",xlab= 'FPR', ylab = 'TPR',lwd=1)
+lines(m1,LR.roc[["sensitivities"]],col='black',lwd=1)
+lines(m2,DT.roc[["sensitivities"]],col="red",lwd=1)
+lines(m3,SV.roc[["sensitivities"]],col="green",lwd=1)
+lines(m3,META.roc[["sensitivities"]],col="pink",lwd=5)
+lines(m4,CLU.roc[["sensitivities"]],col="orange",lwd=3)
+
+lines(NN.metric[[1]][["roc"]][["roc"]][,2]~NN.metric[[1]][["roc"]][["roc"]][,1],col="blue",lwd=1)
+lines(RF.metric[[1]][["roc"]][["roc"]][,2]~RF.metric[[1]][["roc"]][["roc"]][,1],col="purple",pch=0,lwd=1)
+lines(BAGG.metric[[1]][["roc"]][["roc"]][,2]~BAGG.metric[[1]][["roc"]][["roc"]][,1],col="yellow",pch=5,lwd=1)
+lines(BOOST.metric[[1]][["roc"]][["roc"]][,2]~BOOST.metric[[1]][["roc"]][["roc"]][,1],col="navy",pch=1,lwd=1)
+lines(KNN.metric[[1]][["roc"]][["roc"]][,2]~KNN.metric[[1]][["roc"]][["roc"]][,1],col="orange",pch=1,lwd=1)
+
+legend("bottomright"
+       ,legend=c("LR","DT","SV","NN","RF","BAGG","BOOST","KNN",'META','META')
+       , col=c('black',"red","green","blue","purple","yellow","navy",'orange','pink','orange')
+       , lwd=2
+       , cex=0.7
+)
+
+```
+
+###### 8.3 lift cumulative curve of tree-based method
+```{r}
+plot(RF.metric[[1]][["lift"]][["alift"]],col="white",main="Lift cumulative curve",xlab= 'Sample Size', ylab = 'Responses')
+lines(spline(RF.metric[[1]][["lift"]][["alift"]][,1],RF.metric[[1]][["lift"]][["alift"]][,2]),col="green",lwd=2)
+lines(spline(BAGG.metric[[1]][["lift"]][["alift"]][,1],BAGG.metric[[1]][["lift"]][["alift"]][,2]),col="red",lwd=2)
+lines(spline(BOOST.metric[[1]][["lift"]][["alift"]][,1],BOOST.metric[[1]][["lift"]][["alift"]][,2]),col="black",lwd=2)
+legend("bottomright",legend=c("RF","BAGG","BOOST"),col=c('green',"red","black"),lwd=1)
+
+```
+
+
+
+
+###### 8.4 all lift cumulative curves
+```{r}
+plot(alr,main="Lift cumulative curve",xlab= 'Sample Size', ylab = 'Responses')
+lines(adt@y.values[[1]]~adt@x.values[[1]],col="red",lwd=1)
+lines(asv@y.values[[1]]~asv@x.values[[1]],col="green",lwd=1)
+lines(aclu@y.values[[1]]~aclu@x.values[[1]],col="pink",lwd=1)
+lines(spline(NN.metric[[1]][["lift"]][["alift"]][,1],NN.metric[[1]][["lift"]][["alift"]][,2]),col="blue",lwd=1)
+lines(spline(RF.metric[[1]][["lift"]][["alift"]][,1],RF.metric[[1]][["lift"]][["alift"]][,2]),col="green",lwd=1)
+lines(spline(BAGG.metric[[1]][["lift"]][["alift"]][,1],BAGG.metric[[1]][["lift"]][["alift"]][,2]),col="red",lwd=1)
+lines(spline(BOOST.metric[[1]][["lift"]][["alift"]][,1],BOOST.metric[[1]][["lift"]][["alift"]][,2]),col="black",lwd=1)
+lines(spline(KNN.metric[[1]][["lift"]][["alift"]][,1],KNN.metric[[1]][["lift"]][["alift"]][,2]),col="orange",lwd=1)
+legend("bottomright",legend=c(" LR"," DT","SV","NN","RF","BAGG","BOOST",'KNN','CLU'),col=c('black',"red","green","blue","purple","yellow","navy",'orange','pink'),lwd=2,cex=0.7)
+
+```
+
+
 
