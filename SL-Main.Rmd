@@ -142,6 +142,7 @@ raw_PCA <- data.frame(cbind(raw_PCA, raw$y))
 colnames(raw_PCA)[n_PCA+1] <- 'y'
 raw_train_PCA <- raw_PCA[1:40188,]
 raw_test_PCA <- raw_PCA[40189:41188,]
+
 ```
 
 ##### 3.2. Resample
@@ -167,6 +168,7 @@ raw_test_PCA <- raw_PCA[40189:41188,]
 df = raw_PCA
 df_train = raw_train_PCA
 df_test = raw_test_PCA
+
 
 # df = raw_RS
 # df_train = raw_train_RS
@@ -287,7 +289,7 @@ plot_confusion_matrix <- function(probs, y, Subtitle) {
 ###### 4.1.1 fitting - LR
 ```{r}
 LR.model <- glm(formula = y ~ .
-                , data = raw_train_PCA#df_train
+                , data = df_train
                 , family = binomial(link = 'logit')
                 , control = list(maxit = 25)
 )
@@ -534,10 +536,6 @@ NN.model <- fit(x = y ~ .
                 , data = df_train
                 , model = 'mlp'
                 , task = 'prob'#'class','reg','default'
-                #, search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
-                #, search =
-                #, scale =
-                #, transform =
 )
 
 ```
@@ -619,7 +617,7 @@ NN.model2 <- mining(x = y ~ .
                     , model = 'mlp'
                     , task = 'prob'  #'class','reg','default'
                     , method = c('holdoutorder', 1000)
-                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
+                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',5) , metric="AUC" )
                     #, feature = 'none'
                     #, search = 
                     #, scale = 
@@ -646,6 +644,7 @@ cat('\n','AUC:\n')
 NN.auc
 cat('\n','LIFT ACCUMULATIVE:\n')
 NN.alift
+
 
 ## try:
 # NN.probs2 = NN.model2$pred[[1]][,2]
@@ -700,6 +699,7 @@ RF.model <- mining(x = y ~ .
                    , search=list(search = mparheuristic("randomForest", n=5)# 10x5 needs 3100s to run.
                                  #, method = c('holdoutrol',100) 
                                  , method = c('kfoldorder',2)
+
                                  , metric = "AUC" 
                    )
                    
@@ -734,7 +734,7 @@ BAGG.model <- mining(x = y ~ .
                      , model = 'bagging'
                      , task = 'prob'  #'class','reg','default'
                      , method = c('holdoutorder', 1000)
-                     , search=list(search=mparheuristic("bagging", n= 3)
+                     , search=list(search=mparheuristic("bagging", n= 2)
                                    , method = c('kfoldrandom',2) 
                                    , metric="AUC" 
                      )
@@ -764,7 +764,8 @@ BAGG.auc
 ##### 4.7 Boosting - BOOST
 
 ```{r}
-BOOST.model <- mining(x = y ~ .
+
+BOOST.model2 <- mining(x = y ~ .
                        , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
                        , model = 'boosting'
                        , task = 'prob'  #'class','reg','default'
@@ -960,7 +961,8 @@ AUC_selected <-  AUC[, model_selected]
 ###### 6.1.2 Weights
 ```{r}
 
-Weight <-  (AUC_selected-0.5)/(1-0.5)
+Weight <-  (AUC_selected-0.5776)/(1-0.5776)
+
 Weight <-  Weight/sum(Weight)
 print(Weight)
 ```
@@ -1030,22 +1032,14 @@ plot(perf, main="Lift Cumulative Curve"
 ## 7. Models Comparison
 ```{r}
 AUC_all <- cbind(AUC, META.roc$auc)
+
 colnames(AUC_all)[9] <- 'META'
 
 PROBS_all <- cbind(PROBS, META.probs)
 colnames(PROBS_all)[9] <- 'META'
 
+
 CORRELATION_all <- cor(PROBS_all)
 CORRELATION_all
 ```
-
-
-```{r}
-
-```
-
-```{r}
-
-```
-
 
