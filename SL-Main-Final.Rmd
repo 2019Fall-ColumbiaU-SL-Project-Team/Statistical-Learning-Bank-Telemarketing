@@ -1,0 +1,1162 @@
+---
+title: "Bank Telemarketing"
+output: html_notebook
+---
+#### Topic: Statistical/Machine learning
+#### Project Target: Prediction on y (client subscribes)
+#### Team Member: Yiping Pan, Shiqi Song, Qing Shen 
+
+## 0. Library Import
+```{r warning=FALSE}
+# Data Wrangling
+library(caTools)
+
+# Data Assessment/Visualizations
+library(DT)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(dplyr)
+
+# Model
+library(e1071) # svm
+library(rminer)
+library(rpart) # DT
+library(rpart.plot)
+library(vcd)
+library(ROCR)
+library(pROC)
+library(tree)
+library(MASS)
+library(nnet)
+#library(ModelMetrics)
+```
+
+
+```{r}
+
+```
+
+## 1. Exploratory Data Analysis 
+#### 1.1 Dataframe Reading 
+```{r}
+raw <- read.csv('./bank-additional-full.csv',
+                sep = ';'
+)
+```
+
+#### 1.2 Check Basic Information
+```{r}
+# dimension
+dim(raw)
+# check data
+str(raw)
+```
+
+
+
+```{r}
+# completeness of data
+sapply(raw, function(x) {sum(is.na(x))})
+```
+
+```{r}
+print('There is no missing data')
+```
+
+#### 1.3 Variables Exploration
+##### 1.3.0 The response variable:y
+```{r}
+ggplot(raw[1:40188,][!is.na(raw[1:40188,]$y),], aes(x = y, fill = y)) +
+  geom_bar(stat='count') +
+  labs(x = 'How many clients subscribed a term deposit?') +
+  geom_label(stat='count',aes(label=..count..), size=5) +
+  theme_grey(base_size = 12)
+```
+
+##### 1.3.1 age
+
+
+```{r}
+tbl_age <- raw %>%
+  dplyr::select(age, y) %>%
+  group_by(y) %>%
+  summarise(mean.age = mean(age, na.rm=TRUE))
+
+ggplot(raw, aes(age, fill=y)) +
+  geom_histogram(aes(y=..density..), alpha=0.5, bins=30) +
+  geom_density(alpha=.2, aes(colour=y)) +
+  geom_vline(data=tbl_age, aes(xintercept=mean.age, colour=y), lty=2, size=1)  +
+  scale_fill_brewer(palette="Set1") +
+  scale_colour_brewer(palette="Set1") +
+  scale_y_continuous(labels=scales::percent) +
+  ylab("Density") +
+  ggtitle("Subscription Rate by Age") +
+  theme_minimal()
+```
+
+##### 1.3.2 job
+```{r}
+ggplot(raw, aes(job, fill=y)) +
+  geom_bar(position="fill",alpha=0.8) +
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(labels=scales::percent) +
+  ylab("Subscribe Rate") +
+  ggtitle("Subscribe Rate by Job") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+## 2. Train test split
+```{r}
+raw <- raw %>%
+  mutate(y = ifelse(y=="no", 0, 1))
+## Fixed Ratio ##
+# set.seed(99)
+# smp_size = floor(0.97*nrow(raw))
+# train_idx = sample(seq_len(nrow(raw)),size = smp_size)
+# raw_train <- raw[train_idx, ]
+# raw_test <- raw[-train_idx, ]
+
+## Fixed Size ##
+raw_train <- raw[1:40188, ]
+raw_test <- raw[40189:41188, ]
+```
+
+
+
+
+## 3. Data preprocessing (PCA/Transformation/Resample(oversample or downsample)/FeatureSelection)
+##### 3.1. PCA
+```{r}
+# The dims of datasets remain the same.
+# results: raw_PCA, raw_train_PCA, raw_test_PCA
+
+library(dummies)
+
+d <- dummy.data.frame(raw[, -21])
+raw_PCA <- princomp(d)
+#summary(raw_train_PCA, loadings = T)
+n_PCA <- 20
+raw_PCA <- predict(raw_PCA)[,1:n_PCA]
+raw_PCA <- data.frame(cbind(raw_PCA, raw$y))
+colnames(raw_PCA)[n_PCA+1] <- 'y'
+raw_train_PCA <- raw_PCA[1:40188,]
+raw_test_PCA <- raw_PCA[40189:41188,]
+```
+
+##### 3.2. Resample
+```{r}
+# The nrow of training set and all set will be increased in this part.
+# results: raw_RS, raw_train_RS
+raw_dummy <- data.frame(cbind(d, raw$y))
+n_raw <- 64
+colnames(raw_dummy)[n_raw] <- 'y'
+raw_train <- raw_dummy[1:40188, ]
+raw_test_RS <- raw_dummy[40189:41188, ]
+raw_train_RS <- oversample(raw_dummy[1:40188, ]
+                     , ratio = 1
+                     , classAttr = "y"
+                     , method = "MWMOTE"
+                     )
+raw_RS <- list(raw_test_RS,raw_train_RS)
+raw_RS <- list(raw_test_RS,raw_train_RS)
+raw_RS <- Reduce(function(x,y) merge(x,y,all=T),raw_RS)
+```
+
+
+## 4. Modeling and Prediction
+
+```{r}
+
+# df = raw
+# df_train = raw_train
+# df_test = raw_test
+
+# df = raw_PCA
+# df_train = raw_train_PCA
+# df_test = raw_test_PCA
+
+df = raw_RS
+df_train = raw_train_RS
+df_test = raw_test_RS
+
+```
+
+
+
+##### 4.-1. roc-auc method 0 (manually)
+```{r}
+
+# ##================== DEF1: ROC CALCULATION FUNCTION ================= 
+# 
+# calculate_roc <- function(probs, y, n=100) {
+#   
+#   tp <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 1)
+#   }
+#   
+#   fp <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 0)
+#   }
+#   
+#   tn <- function(probs, y, threshold) {
+#     sum(probs < threshold & y == 0)
+#   }
+#   
+#   fn <- function(probs, y, threshold) {
+#     sum(probs < threshold & y == 1)
+#   }
+#   
+#   tpr <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 1) / sum(y == 1)
+#   }
+#   
+#   fpr <- function(probs, y, threshold) {
+#     sum(probs >= threshold & y == 0) / sum(y == 0)
+#   }
+#   
+#   threshold_round <- function(value, threshold)
+#   {
+#     return (as.integer(!(value < threshold)))
+#   }
+# 
+#   auc_ <- function(probs, y) {
+#     auc(y, probs)
+#   }
+#   
+#   roc <- data.frame(threshold = seq(0,1,length.out=n), tpr=NA, fpr=NA)
+#   roc$tp <- sapply(roc$threshold, function(th) tp(probs, y, th))
+#   roc$fp <- sapply(roc$threshold, function(th) fp(probs, y, th))
+#   roc$tn <- sapply(roc$threshold, function(th) tn(probs, y, th))
+#   roc$fn <- sapply(roc$threshold, function(th) fn(probs, y, th))
+#   roc$tpr <- sapply(roc$threshold, function(th) tpr(probs, y, th))
+#   roc$fpr <- sapply(roc$threshold, function(th) fpr(probs, y, th))
+#   roc$auc <-  sapply(roc$threshold, function(th) auc_(probs, y))
+#   
+#   return(roc)
+# }
+# 
+# ##================== DEF2: PLOT FUNCTION ================= 
+# 
+# plot_roc <- function(roc, threshold) {
+#   
+#   norm_vec <- function(v) (v - min(v))/diff(range(v))
+#   
+#   idx_threshold = which.min(abs(roc$threshold-threshold))
+#   
+#   p_roc <- ggplot(roc, aes(fpr,tpr)) + 
+#     geom_line(color=rgb(0,0,1,alpha=0.3)) +
+#     geom_point(size=2, alpha=0.5) +
+#     labs(title = sprintf("ROC")) + xlab("FPR") + ylab("TPR") +
+#     geom_hline(yintercept=roc[idx_threshold,"tpr"], alpha=0.5, linetype="dashed") +
+#     geom_vline(xintercept=roc[idx_threshold,"fpr"], alpha=0.5, linetype="dashed")
+# 
+#   grid.arrange(p_roc, ncol=1)#,sub=textGrob(sub_title, gp=gpar(cex=1), just="bottom"))
+# }
+# 
+# 
+# ##================== CALL =============================
+# 
+# LR.model <- glm(y ~ ., data = df_train, family = binomial(link = 'logit'), control = list(maxit = 25))
+# 
+# LR.roc <- calculate_roc(probs = LR.probs
+#                         , y = df_test$y
+#                         , n = 100
+#                         )
+# th <- 0.5
+# plot_roc(roc = LR.roc
+#          , threshold = th
+#          )
+# LR.auc = LR.roc$auc[1]
+# print(LR.auc)
+```
+
+##### 4.0. Helper: Confusion Matrix
+```{r}
+plot_confusion_matrix <- function(probs, y, Subtitle) {
+  tst <- data.frame(round(probs,0), y)
+  opts <-  c("Predicted","Target")
+  names(tst) <- opts
+  cf <- plyr::count(tst)
+  cf[opts][cf[opts]==0] <- "failure"
+  cf[opts][cf[opts]==1] <- "success"
+  
+  ggplot(data =  cf, mapping = aes(x = Predicted, y = Target)) +
+    labs(title = "Confusion matrix", subtitle = Subtitle) +
+    geom_tile(aes(fill = freq), colour = "grey") +
+    geom_text(aes(label = sprintf("%1.0f", freq)), vjust = 1) +
+    scale_fill_gradient(low = "lightblue", high = "blue") +
+    theme_bw() + theme(legend.position = "none")
+  
+}
+```
+
+##### 4.1. Logistic Regression - LR
+###### 4.1.1 fitting - LR
+```{r}
+LR.model <- glm(formula = y ~ .
+                , data = df_train
+                , family = binomial(link = 'logit')
+                , control = list(maxit = 25)
+)
+
+summary(LR.model)
+```
+###### 4.1.2 confusion matrix - LR
+```{r}
+LR.probs <- predict(LR.model
+                    , df_test[, -ncol(df_test)]
+                    , type = "response"
+)
+
+plot_confusion_matrix(probs = LR.probs
+                      , y = df_test$y
+                      , Subtitle = "Logistic Regression"
+)
+
+```
+
+###### 4.1.3 roc-auc method 1 - LR 
+```{r}
+# pROC
+# ggroc
+LR.roc = roc(df_test$y ~ LR.probs)
+plot(LR.roc)
+print(LR.roc$auc)
+```
+
+###### 4.1.4 roc-auc method 2 - LR
+```{r }
+
+pred <- prediction(LR.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+```
+
+###### 4.1.5 lift cumulative - LR
+```{r}
+pred <- prediction(LR.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+alr=performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+
+##### 4.2. Decision Tree - DT
+###### 4.2.1 fitting - DT
+```{r}
+DT.model = rpart(formula = y ~ . 
+                 , data = df_train
+                 , method = "class"
+                 #, minsplit
+                 #, minbucket
+)
+
+DT.model
+```
+
+###### 4.2.2 visualization - DT
+```{r}
+# plot(DT.model)
+# text
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+# plot mytree
+fancyRpartPlot(DT.model, caption = NULL)
+```
+```{r}
+DT.importance = DT.model$variable.importance
+DT.importance
+```
+
+###### 4.2.3 confusion matrix - DT
+```{r}
+DT.probs <- predict(DT.model
+                    , df_test[, -ncol(df_test)]
+                    , type = "prob"
+)
+DT.probs <- DT.probs[, 2] 
+# Notice: The prediced results has two complementary columns. The 2nd column is what we want.
+
+# DT.pred <- as.numeric(DT.pred)
+# DT.pred[DT.pred==1] = 0
+# DT.pred[DT.pred==2] = 1
+# DT.probs = DT.pred
+# 
+plot_confusion_matrix(probs = DT.probs
+                      , y = df_test$y
+                      , Subtitle = "Decision Tree"
+)
+
+```
+
+###### 4.2.4 roc-auc method 1 - DT
+```{r}
+DT.roc = roc(df_test$y ~ DT.probs)
+plot(DT.roc)
+print(DT.roc$auc)
+```
+
+###### 4.2.5 roc-auc method 2 - DT
+```{r}
+pred <- prediction(DT.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 4.2.6 lift cumulative - DT
+```{r}
+pred <- prediction(DT.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+adt=performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+
+
+##### 4.3 Support Vector Machine - SV
+###### 4.3.1 fitting - SV
+```{r}
+#### running needs about 5 mins.
+SV.model <- svm(formula = y ~ .
+                , data = df_train
+                , type = 'C-classification'
+                , kernel = 'radial'
+                , scale = TRUE
+                , probability = TRUE
+)
+```
+
+```{r}
+summary(SV.model)
+```
+
+
+
+###### 4.3.2 confusion matrix - SV
+```{r}
+pred <- predict(SV.model
+                , df_test[, -ncol(df_test)]
+                , decision.values = TRUE
+                , probability = TRUE
+)
+SV.probs = attr(pred, "probabilities")[,2]
+```
+
+
+```{r}
+plot_confusion_matrix(probs = SV.probs
+                      , y = df_test$y
+                      , Subtitle = "Support Vector Machine"
+)
+
+```
+
+###### 4.3.3 roc-auc method 1 - SV
+```{r}
+SV.roc = roc(df_test$y ~ SV.probs)
+plot(SV.roc)
+print(SV.roc$auc)
+```
+
+###### 4.3.4 roc-auc method 2 - SV
+```{r}
+pred <- prediction(SV.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 4.3.5 lift cumulative - SV
+```{r}
+pred <- prediction(SV.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+asv <- perf
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+
+
+##### 4.4. Neural Network - NN
+###### 4.4.1 fitting - NN
+```{r}
+#### running needs about 5 mins.
+NN.model <- fit(x = y ~ .
+                , data = df_train
+                , model = 'mlp'
+                , task = 'prob'#'class','reg','default'
+                #, search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',2) , metric="AUC" )
+                #, search =
+                #, scale =
+                #, transform =
+)
+
+```
+
+```{r}
+#(NN.model)@formula
+```
+
+
+
+###### 4.4.2 confusion matrix - NN
+```{r}
+NN.probs <- predict(object = NN.model
+                    , newdata = df_test[, -ncol(df_test)]
+)
+```
+
+
+```{r}
+plot_confusion_matrix(probs = NN.probs
+                      , y = df_test$y
+                      , Subtitle = "Neural Network"
+)
+
+```
+
+###### 4.4.3 roc-auc method 1 - NN
+```{r}
+NN.roc = roc(df_test$y ~ NN.probs)
+plot(NN.roc)
+print(NN.roc$auc)
+```
+
+###### 4.4.4 roc-auc method 2 - NN
+```{r}
+pred <- prediction(NN.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+
+
+
+
+###### 4.4.5 lift cumulative - NN
+```{r}
+pred <- prediction(NN.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+
+
+###### 4.4.X. ALL use 'mining' - NN
+
+```{r}
+NN.model2 <- mining(x = y ~ .
+                    , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
+                    , model = 'mlp'
+                    , task = 'prob'  #'class','reg','default'
+                    , method = c('holdoutorder', 1000)
+                    , search=list(search=mparheuristic("mlp", n= 5), method = c('kfoldrandom',3) , metric="AUC" )
+                    #, feature = 'none'
+                    #, search = 
+                    #, scale = 
+                    #, transform = 
+)
+```
+
+
+
+
+
+
+```{r}
+NN.metric <- mmetric(y = NN.model2
+                     , metric = c('CONF', 'AUC', 'LIFT')
+)
+NN.auc <-  NN.metric[[1]]$roc$auc
+NN.conf <-  NN.metric[[1]]$conf
+NN.alift <-  NN.metric[[1]]$lift$alift[,2]
+
+cat('CONFUSION MATRIX:\n')
+NN.conf
+cat('\n','AUC:\n')
+NN.auc
+cat('\n','LIFT ACCUMULATIVE:\n')
+NN.alift
+
+## try:
+# NN.probs2 = NN.model2$pred[[1]][,2]
+# plot_confusion_matrix(NN.probs2
+#                       , df_test$y
+#                       , Subtitle = 'Neural Network'
+#                       )
+
+
+```
+
+```{r}
+mgraph(y = NN.model2
+       , graph = 'ROC'
+       , baseline = TRUE
+)
+mgraph(y = NN.model2
+       , graph = 'LIFT'
+       , baseline = TRUE
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### 4.5 Random Forest - RF
+
+```{r}
+RF.model <- mining(x = y ~ .
+                   , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
+                   , model = 'randomForest'
+                   , task = 'prob'  #'class','reg','default'
+                   , method = c('holdoutorder', 1000)
+                   , search=list(search = mparheuristic("randomForest", n=3)# 10x5 needs 3100s to run.
+                                 #, method = c('holdoutrol',100) 
+                                 , method = c('kfoldorder',3)
+                                 , metric = "AUC" 
+                   )
+                   
+                   #, feature = 
+                   #, scale = 
+                   #, transform = 
+)
+```
+
+
+```{r}
+RF.probs <- RF.model$pred[[1]][,2]
+
+RF.metric <-  mmetric(y = RF.model
+                      , metric = c('CONF', 'AUC', 'LIFT')
+)
+RF.auc  <-  RF.metric[[1]]$roc$auc
+RF.conf <-  RF.metric[[1]]$conf
+RF.alift <-  RF.metric[[1]]$lift$alift[,2]
+
+cat('CONFUSION MATRIX:\n')
+RF.conf
+cat('\n','AUC:\n')
+RF.auc
+```
+
+##### 4.6 Bagging - BAGG
+
+```{r}
+BAGG.model <- mining(x = y ~ .
+                     , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
+                     , model = 'bagging'
+                     , task = 'prob'  #'class','reg','default'
+                     , method = c('holdoutorder', 1000)
+                     , search=list(search=mparheuristic("bagging", n= 3)
+                                   , method = c('kfoldrandom',2) 
+                                   , metric="AUC" 
+                     )
+                     #, feature = 'none'
+                     #, search = 
+                     #, scale = 
+                     #, transform = 
+)
+```
+
+```{r}
+BAGG.probs <- BAGG.model$pred[[1]][,2]
+
+BAGG.metric <- mmetric(y = BAGG.model
+                       , metric = c('CONF', 'AUC', 'LIFT')
+)
+BAGG.auc <- BAGG.metric[[1]]$roc$auc
+BAGG.conf <- BAGG.metric[[1]]$conf
+BAGG.alift <- BAGG.metric[[1]]$lift$alift[,2]
+
+cat('CONFUSION MATRIX:\n')
+BAGG.conf
+cat('\n','AUC:\n')
+BAGG.auc
+```
+
+##### 4.7 Boosting - BOOST
+
+```{r}
+BOOST.model <- mining(x = y ~ .
+                      , data = df  ### Notice here. Previous train-test splits are not used. Use 'holdoutorder' to split.
+                      , model = 'boosting'
+                      , task = 'prob'  #'class','reg','default'
+                      , method = c('holdoutorder', 1000)
+                      # , search=list(search=mparheuristic("boosting", n= 2) ## 2x2 needs 7500s !
+                      #               , method = c('kfoldrandom',2) 
+                      #               , metric="AUC" 
+                      #)
+                      #, feature = 'none'
+                      #, search = 
+                      #, scale = 
+                      #, transform = 
+)
+```
+
+```{r}
+BOOST.probs <- BOOST.model$pred[[1]][,2]
+BOOST.metric <- mmetric(y = BOOST.model
+                        , metric = c('CONF', 'AUC', 'LIFT')
+)
+BOOST.auc <- BOOST.metric[[1]]$roc$auc
+BOOST.conf <- BOOST.metric[[1]]$conf
+BOOST.alift <- BOOST.metric[[1]]$lift$alift[,2]
+
+cat('CONFUSION MATRIX:\n')
+BOOST.conf
+cat('\n','AUC:\n')
+BOOST.auc
+```
+
+##### 4.8 Quadratic Discriminant Analysis - QDA
+
+```{r}
+
+tmp <-   lapply(df_train, as.numeric)
+df_train_num <- structure(tmp, row.names = c(NA, -length(tmp[[1]])), class = "data.frame")
+
+tmp <-   lapply(df_test, as.numeric)
+df_test_num <- structure(tmp, row.names = c(NA, -length(tmp[[1]])), class = "data.frame")
+
+tmp <-   lapply(df, as.numeric)
+df_num <- structure(tmp, row.names = c(NA, -length(tmp[[1]])), class = "data.frame")
+```
+
+
+```{r}
+
+# QDA.model <- fit(x = y ~ .
+#                 , data = df_train_num
+#                 , model = 'qda'
+#                 , task = 'prob'#'class','reg','default'
+#                 #, search =
+#                 #, scale =
+#                 #, transform =
+# )
+QDA.model <- qda(formula = y ~ .
+                 , data = df_train_num
+                 , method = 'mle'
+)
+```
+
+
+```{r}
+QDA.probs <- predict(object = QDA.model
+                     , newdata = df_test_num[, -ncol(df_test_num)]
+)
+QDA.probs <- QDA.probs$posterior[, 2]
+```
+
+```{r}
+
+```
+
+
+```{r}
+plot_confusion_matrix(probs = QDA.probs
+                      , y = df_test_num$y
+                      , Subtitle = "QDA"
+)
+
+```
+
+
+```{r}
+QDA.roc = roc(df_test$y ~ QDA.probs)
+plot(QDA.roc)
+print(QDA.roc$auc)
+```
+
+
+
+##### 4.9 K-nearest Neighborhood - KNN
+
+```{r}
+KNN.model <- mining(x = y ~ .
+                    , data = df_num  
+                    , model = 'knn'
+                    , task = 'prob'  #'class','reg','default'
+                    , method = c('holdoutorder', 1000)
+                    , search=list(search=mparheuristic("knn", n= 10)
+                                  , method = c('kfoldrandom',5)
+                                  , metric="AUC"
+                    )
+                    #, feature = 'none'
+                    #, search = 
+                    #, scale = 
+                    #, transform = 
+)
+```
+
+```{r}
+KNN.probs <- KNN.model$pred[[1]][,2]
+KNN.metric <- mmetric(y = KNN.model
+                      , metric = c('CONF', 'AUC', 'LIFT')
+)
+KNN.auc <- KNN.metric[[1]]$roc$auc
+KNN.conf <- KNN.metric[[1]]$conf
+KNN.alift <- KNN.metric[[1]]$lift$alift[,2]
+
+cat('CONFUSION MATRIX:\n')
+KNN.conf
+cat('\n','AUC:\n')
+KNN.auc
+```
+
+## 5. Models Result Collecting
+```{r}
+AUC <-  data.frame(cbind(LR.roc$auc
+                         , DT.roc$auc
+                         , SV.roc$auc
+                         , NN.auc
+                         , RF.auc
+                         , BAGG.auc
+                         , BOOST.auc
+                         #, QDA.auc
+                         , KNN.auc
+)
+)
+colnames(AUC) <- c('LR'
+                   ,'DT'
+                   ,'SV'
+                   ,'NN'
+                   ,'RF'
+                   ,'BAGG'
+                   ,'BOOST'
+                   #,'QDA'
+                   ,'KNN'
+)
+
+PROBS <- data.frame(cbind(LR.probs
+                          , DT.probs
+                          , SV.probs
+                          , NN.probs
+                          , RF.probs
+                          , BAGG.probs
+                          , BOOST.probs
+                          #, QDA.probs
+                          , KNN.probs
+)
+)
+colnames(PROBS) <- c('LR'
+                     ,'DT'
+                     ,'SV'
+                     ,'NN'
+                     ,'RF'
+                     ,'BAGG'
+                     ,'BOOST'
+                     #,'QDA'
+                     ,'KNN'
+)
+AUC
+```
+
+```{r}
+CORRELATION = cor(PROBS)
+CORRELATION
+```
+
+
+## 6. Ensemble: META
+##### 6.1 Modeling - META
+###### 6.1.1 Models Decorrelation 
+```{r}
+# use PROBS as inupt data. 
+# dim(PROBS) is 1000 x n(models)
+
+
+#model_selected  <-  c('LR','SV','NN','BOOST','KNN')
+model_selected  <-  c('SV','NN','BOOST')
+PROBS_selected <-  PROBS[, model_selected]
+AUC_selected <-  AUC[, model_selected]
+```
+
+###### 6.1.2 Weights
+```{r}
+
+Weight <-  (AUC_selected-0.82)/(1-0.82)
+Weight <-  Weight/sum(Weight)
+print(Weight)
+```
+
+###### 6.1.3 META Prediction
+```{r}
+
+tmp <- mapply(`*`, PROBS_selected, Weight)
+META.probs <- rowSums(tmp)
+```
+
+##### 6.2 Model Performance - META 
+###### 6.2.1 Confusion Matrix - META
+```{r}
+plot_confusion_matrix(probs = META.probs
+                      , y = df_test$y
+                      , Subtitle = "META"
+)
+
+```
+
+
+
+
+###### 6.2.2 roc-auc method 1 - META
+```{r}
+META.roc = roc(df_test$y ~ META.probs)
+plot(META.roc)
+print(META.roc$auc)
+```
+
+###### 6.2.3 roc-auc method 2 - META
+```{r}
+pred <- prediction(META.probs, df_test$y)
+perf <- performance(pred,"tpr","fpr")
+
+plot(perf
+     , main="ROC Curve"
+     , colorize=T
+     , lwd = 4
+)
+
+auc <- performance(pred, measure = "auc")
+print(auc@y.values[[1]])
+
+```
+
+###### 6.2.4 lift cumulative - META
+```{r}
+pred <- prediction(META.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the previous block
+
+#par(mfrow=c(1,2))
+# perf <- performance(pred,"lift","rpp")
+# plot(perf, main = "Lift Curve"
+#      , colorize = T
+#      , lwd = 4
+#      )
+perf <- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+##### 6.3 clustering
+###### 6.3.1 roc-CLU
+```{r}
+cl <- kmeans(PROBS
+             , centers = 2
+             , algorithm = "MacQueen"
+             )
+chaa <- cl[["cluster"]]-rep(1,1000)
+cl_power <- 1/exp(3*abs(chaa-PROBS_selected ))
+#cl_power <- exp(1/abs((cl$cluster-1)-PROBS_selected ))
+#cl_power <-exp(-abs((cl$cluster-1)-PROBS_selected ))
+Weight <-  cl_power/(rowSums(cl_power[, 1:3]))
+tmp <- mapply(`*`, PROBS_selected, Weight)
+CLU.probs <- rowSums(tmp)
+CLU.roc <-  roc(df_test$y ~ CLU.probs)
+print(CLU.roc$auc) 
+```
+###### 6.3.2 lift cumulative - CLU
+```{r}
+pred <- prediction(CLU.probs, df_test$y) # this line is a copy fro the previous block
+perf <- performance(pred,"tpr","fpr") # this line is a copy fro the 
+aclu<- performance(pred,"tpr","rpp")
+plot(perf, main="Lift Cumulative Curve"
+     , colorize=T
+     , lwd = 4
+)
+```
+
+## 7. Models Comparison
+```{r}
+AUC_all <- cbind(AUC, META.roc$auc)
+colnames(AUC_all)[9] <- 'META'
+
+PROBS_all <- cbind(PROBS, META.probs)
+colnames(PROBS_all)[9] <- 'META'
+
+CORRELATION_all <- cor(PROBS_all)
+CORRELATION_all
+```
+
+## 8. Plot
+###### 8.1 roc curve without tree-based method
+```{r}
+m1=(rep(1,1001)-LR.roc[["specificities"]])
+m2=(rep(1,7)-DT.roc[["specificities"]])
+m3=(rep(1,1001)-SV.roc[["specificities"]])
+m4=(rep(1,1001)-CLU.roc[["specificities"]])
+plot(m1,LR.roc[["sensitivities"]],col="white",main="ROC curve",xlab= 'FPR', ylab = 'TPR',lwd=2)
+lines(m1,LR.roc[["sensitivities"]],col='black',lwd=2)
+lines(m2,DT.roc[["sensitivities"]],col="red",lwd=2)
+lines(m3,SV.roc[["sensitivities"]],col="green",lwd=2)
+lines(NN.metric[[1]][["roc"]][["roc"]][,2]~NN.metric[[1]][["roc"]][["roc"]][,1],col="blue",lwd=2)
+lines(m4,CLU.roc[["sensitivities"]],col="pink",lwd=2)
+legend("bottomright",legend=c(" LR"," DT","SV","NN",'CLU'),col=c('black',"red","green","blue",'pink'),lwd=1)
+
+```
+
+###### 8.2 all roc curves
+```{r}
+m1=(rep(1,1001)-LR.roc[["specificities"]])
+m2=(rep(1,7)-DT.roc[["specificities"]])
+m3=(rep(1,1001)-SV.roc[["specificities"]])
+m4=(rep(1,1001)-META.roc[["specificities"]])
+m5=(rep(1,1001)-CLU.roc[["specificities"]])
+
+par(cex.axis=0.9,font.axis=1)
+plot(m1,LR.roc[["sensitivities"]],col="white",main="ROC curve",xlab= 'FPR', ylab = 'TPR',lwd=1)
+#lines(m1,LR.roc[["sensitivities"]],col='black',lwd=1)
+#lines(m2,DT.roc[["sensitivities"]],col="red",lwd=1)
+lines(m3,SV.roc[["sensitivities"]],col="green",lwd=1)
+lines(m4,META.roc[["sensitivities"]],col="pink",lwd=3)
+lines(m5,CLU.roc[["sensitivities"]],col="orange",lwd=3)
+
+lines(NN.metric[[1]][["roc"]][["roc"]][,2]~NN.metric[[1]][["roc"]][["roc"]][,1],col="blue",lwd=1)
+lines(RF.metric[[1]][["roc"]][["roc"]][,2]~RF.metric[[1]][["roc"]][["roc"]][,1],col="purple",pch=0,lwd=3)
+#lines(BAGG.metric[[1]][["roc"]][["roc"]][,2]~BAGG.metric[[1]][["roc"]][["roc"]][,1],col="yellow",pch=5,lwd=1)
+lines(BOOST.metric[[1]][["roc"]][["roc"]][,2]~BOOST.metric[[1]][["roc"]][["roc"]][,1],col="navy",pch=1,lwd=1)
+#lines(KNN.metric[[1]][["roc"]][["roc"]][,2]~KNN.metric[[1]][["roc"]][["roc"]][,1],col="orange",pch=1,lwd=1)
+
+legend("bottomright"
+       #,legend=c("LR","DT","SV","NN","RF","BAGG","BOOST","KNN",'META1','META2')
+       #, col=c('black',"red","green","blue","purple","yellow","navy",'orange','pink','orange')
+       # , legend = c('SV','NN','BOOST', 'META1','RF-Resample')
+       # , col = c('green','blue','navy','pink','purple')
+       , legend = c('SV','NN','BOOST', 'META1','META2','RF-Resample')
+       , col = c('green','blue','navy','pink','orange','purple')
+       , lwd=2
+       , cex=1
+)
+
+```
+
+###### 8.3 lift cumulative curve of tree-based method
+```{r}
+plot(RF.metric[[1]][["lift"]][["alift"]],col="white",main="Lift cumulative curve",xlab= 'Sample Size', ylab = 'Responses')
+lines(spline(RF.metric[[1]][["lift"]][["alift"]][,1],RF.metric[[1]][["lift"]][["alift"]][,2]),col="green",lwd=2)
+lines(spline(BAGG.metric[[1]][["lift"]][["alift"]][,1],BAGG.metric[[1]][["lift"]][["alift"]][,2]),col="red",lwd=2)
+lines(spline(BOOST.metric[[1]][["lift"]][["alift"]][,1],BOOST.metric[[1]][["lift"]][["alift"]][,2]),col="black",lwd=2)
+legend("bottomright",legend=c("RF","BAGG","BOOST"),col=c('green',"red","black"),lwd=1)
+  
+```
+
+
+
+
+###### 8.4 all lift cumulative curves
+```{r}
+plot(alr,main="Lift cumulative curve",xlab= 'Sample Size', ylab = 'Responses')
+lines(adt@y.values[[1]]~adt@x.values[[1]],col="red",lwd=1)
+lines(asv@y.values[[1]]~asv@x.values[[1]],col="green",lwd=1)
+lines(aclu@y.values[[1]]~aclu@x.values[[1]],col="pink",lwd=1)
+lines(spline(NN.metric[[1]][["lift"]][["alift"]][,1],NN.metric[[1]][["lift"]][["alift"]][,2]),col="blue",lwd=1)
+lines(spline(RF.metric[[1]][["lift"]][["alift"]][,1],RF.metric[[1]][["lift"]][["alift"]][,2]),col="green",lwd=1)
+lines(spline(BAGG.metric[[1]][["lift"]][["alift"]][,1],BAGG.metric[[1]][["lift"]][["alift"]][,2]),col="red",lwd=1)
+lines(spline(BOOST.metric[[1]][["lift"]][["alift"]][,1],BOOST.metric[[1]][["lift"]][["alift"]][,2]),col="black",lwd=1)
+lines(spline(KNN.metric[[1]][["lift"]][["alift"]][,1],KNN.metric[[1]][["lift"]][["alift"]][,2]),col="orange",lwd=1)
+legend("bottomright",legend=c(" LR"," DT","SV","NN","RF","BAGG","BOOST",'KNN','CLU'),col=c('black',"red","green","blue","purple","yellow","navy",'orange','pink'),lwd=2,cex=0.7)
+
+```
+
+
+
